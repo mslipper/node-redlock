@@ -57,11 +57,8 @@ const extendScript = `
 // defaults
 const defaults = {
 	driftFactor: 0.01,
-	maxRetryInterval: 2000,
-	minRetryInterval:  100,
 	retryCount: 10,
-	retryGrowthFactor: 50,
-	retryJitter: 100
+	retryDelayCb: (attempt) => 50,
 };
 
 
@@ -124,11 +121,8 @@ function Redlock(clients, options) {
 	// set default options
 	options = options || {};
 	this.driftFactor  = typeof options.driftFactor  === 'number' ? options.driftFactor : defaults.driftFactor;
-	this.minRetryInterval  = typeof options.minRetryInterval  === 'number' ? options.minRetryInterval : defaults.minRetryInterval;
-	this.maxRetryInterval  = typeof options.maxRetryInterval  === 'number' ? options.maxRetryInterval : defaults.maxRetryInterval;
-	this.retryGrowthFactor  = typeof options.retryGrowthFactor  === 'number' ? options.retryGrowthFactor : defaults.retryGrowthFactor;
 	this.retryCount   = typeof options.retryCount   === 'number' ? options.retryCount  : defaults.retryCount;
-	this.retryJitter  = typeof options.retryJitter  === 'number' ? options.retryJitter : defaults.retryJitter;
+	this.retryDelayCb = typeof options.retryDelayCb === 'function' ? options.retryDelayCb : defaults.retryDelayCb;
 	this.lockScript   = typeof options.lockScript   === 'function' ? options.lockScript(lockScript) : lockScript;
 	this.unlockScript = typeof options.unlockScript === 'function' ? options.unlockScript(unlockScript) : unlockScript;
 	this.extendScript = typeof options.extendScript === 'function' ? options.extendScript(extendScript) : extendScript;
@@ -408,9 +402,7 @@ Redlock.prototype._lock = function _lock(resource, value, ttl, callback) {
 				return lock.unlock(function(){
 					// RETRY
 					if(self.retryCount === -1 || attempts <= self.retryCount) {
-						const mul = Math.min(Math.min(0, attempts), 8);
-						const delay = Math.min(self.maxRetryInterval, Math.max(self.minRetryInterval, self.minRetryInterval + self.retryGrowthFactor * (2 * mul) + Math.floor((Math.random() * 2 - 1) * self.retryJitter)));
-						return setTimeout(attempt, delay);
+						return setTimeout(attempt, self.retryDelayCb(attempts));
 					}
 
 					// FAILED
