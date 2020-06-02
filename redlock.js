@@ -57,8 +57,10 @@ const extendScript = `
 // defaults
 const defaults = {
 	driftFactor: 0.01,
-	retryCount:  10,
-	retryDelay:  200,
+	maxRetryInterval: 2000,
+	minRetryInterval:  100,
+	retryCount: 10,
+	retryGrowthFactor: 50,
 	retryJitter: 100
 };
 
@@ -122,8 +124,10 @@ function Redlock(clients, options) {
 	// set default options
 	options = options || {};
 	this.driftFactor  = typeof options.driftFactor  === 'number' ? options.driftFactor : defaults.driftFactor;
+	this.minRetryInterval  = typeof options.minRetryInterval  === 'number' ? options.minRetryInterval : defaults.minRetryInterval;
+	this.maxRetryInterval  = typeof options.maxRetryInterval  === 'number' ? options.maxRetryInterval : defaults.maxRetryInterval;
+	this.retryGrowthFactor  = typeof options.retryGrowthFactor  === 'number' ? options.retryGrowthFactor : defaults.retryGrowthFactor;
 	this.retryCount   = typeof options.retryCount   === 'number' ? options.retryCount  : defaults.retryCount;
-	this.retryDelay   = typeof options.retryDelay   === 'number' ? options.retryDelay  : defaults.retryDelay;
 	this.retryJitter  = typeof options.retryJitter  === 'number' ? options.retryJitter : defaults.retryJitter;
 	this.lockScript   = typeof options.lockScript   === 'function' ? options.lockScript(lockScript) : lockScript;
 	this.unlockScript = typeof options.unlockScript === 'function' ? options.unlockScript(unlockScript) : unlockScript;
@@ -402,10 +406,12 @@ Redlock.prototype._lock = function _lock(resource, value, ttl, callback) {
 
 				// remove this lock from servers that voted for it
 				return lock.unlock(function(){
-
 					// RETRY
-					if(self.retryCount === -1 || attempts <= self.retryCount)
-						return setTimeout(attempt, Math.max(0, self.retryDelay + Math.floor((Math.random() * 2 - 1) * self.retryJitter)));
+					if(self.retryCount === -1 || attempts <= self.retryCount) {
+						const mul = Math.min(Math.min(0, attempts), 8);
+						const delay = Math.min(self.maxRetryInterval, Math.max(self.minRetryInterval, self.minRetryInterval + self.retryGrowthFactor * (2 * mul) + Math.floor((Math.random() * 2 - 1) * self.retryJitter)));
+						return setTimeout(attempt, delay);
+					}
 
 					// FAILED
 					return reject(new LockError('Exceeded ' + self.retryCount + ' attempts to lock the resource "' + resource + '".', attempts));
